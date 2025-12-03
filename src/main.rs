@@ -15,16 +15,17 @@ use anyhow::Result;
 use colored::*;
 
 pub mod benchmark;
-pub mod cli;
-pub mod command;
-pub mod error;
-pub mod export;
-pub mod options;
-pub mod outlier_detection;
-pub mod output;
-pub mod parameter;
-pub mod timer;
-pub mod util;
+mod cli;
+mod command;
+mod error;
+mod export;
+mod options;
+mod outlier_detection;
+mod output;
+mod parameter;
+mod poop_metrics;
+mod timer;
+mod util;
 
 fn run() -> Result<()> {
     // Enabled ANSI colors on Windows 10

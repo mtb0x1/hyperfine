@@ -7,7 +7,8 @@ use crate::options::{
     CmdFailureAction, CommandInputPolicy, CommandOutputPolicy, Options, OutputStyleOption, Shell,
 };
 use crate::output::progress_bar::get_progress_bar;
-use crate::timer::{execute_and_measure, TimerResult};
+use crate::poop_metrics::MetricType;
+use crate::timer::execute_and_measure;
 use crate::util::randomized_environment_offset;
 use crate::util::units::Second;
 
@@ -15,6 +16,16 @@ use super::timing_result::TimingResult;
 
 use anyhow::{bail, Context, Result};
 use statistical::mean;
+
+#[derive(Clone)]
+struct CommandExecutionOptions<'a> {
+    command_failure_action: CmdFailureAction,
+    command_input_policy: &'a CommandInputPolicy,
+    command_output_policy: &'a CommandOutputPolicy,
+    command_name: &'a str,
+    collect_metrics: bool,
+    metrics_to_collect: &'a [MetricType],
+}
 
 pub enum BenchmarkIteration {
     NonBenchmarkRun,
@@ -58,13 +69,10 @@ pub trait Executor {
 fn run_command_and_measure_common(
     mut command: std::process::Command,
     iteration: BenchmarkIteration,
-    command_failure_action: CmdFailureAction,
-    command_input_policy: &CommandInputPolicy,
-    command_output_policy: &CommandOutputPolicy,
-    command_name: &str,
-) -> Result<TimerResult> {
-    let stdin = command_input_policy.get_stdin()?;
-    let (stdout, stderr) = command_output_policy.get_stdout_stderr()?;
+    options: CommandExecutionOptions,
+) -> Result<(TimingResult, ExitStatus)> {
+    let stdin = options.command_input_policy.get_stdin()?;
+    let (stdout, stderr) = options.command_output_policy.get_stdout_stderr()?;
     command.stdin(stdin).stdout(stdout).stderr(stderr);
 
     command.env(
@@ -76,18 +84,19 @@ fn run_command_and_measure_common(
         command.env("HYPERFINE_ITERATION", value);
     }
 
-    let result = execute_and_measure(command)
-        .with_context(|| format!("Failed to run command '{command_name}'"))?;
+    let timer_result =
+        execute_and_measure(command, options.collect_metrics, options.metrics_to_collect)
+            .with_context(|| format!("Failed to run command '{}'", options.command_name))?;
 
-    if !result.status.success() {
+    if !timer_result.status.success() {
         use crate::util::exit_code::extract_exit_code;
 
-        let should_fail = match command_failure_action {
+        let should_fail = match options.command_failure_action {
             CmdFailureAction::RaiseError => true,
             CmdFailureAction::IgnoreAllFailures => false,
             CmdFailureAction::IgnoreSpecificFailures(ref codes) => {
                 // Only fail if the exit code is not in the list of codes to ignore
-                if let Some(exit_code) = extract_exit_code(result.status) {
+                if let Some(exit_code) = extract_exit_code(timer_result.status) {
                     !codes.contains(&exit_code)
                 } else {
                     // If we can't extract an exit code, treat it as a failure
@@ -107,7 +116,7 @@ fn run_command_and_measure_common(
             bail!(
                 "{cause} in {when}. Use the '-i'/'--ignore-failure' option if you want to ignore this. \
                 Alternatively, use the '--show-output' option to debug what went wrong.",
-                cause=result.status.code().map_or(
+                cause=timer_result.status.code().map_or(
                     "The process has been terminated by a signal".into(),
                     |c| format!("Command terminated with non-zero exit code {c}")
 
@@ -116,7 +125,18 @@ fn run_command_and_measure_common(
         }
     }
 
-    Ok(result)
+    let status = timer_result.status;
+
+    Ok((
+        TimingResult {
+            time_real: timer_result.time_real,
+            time_user: timer_result.time_user,
+            time_system: timer_result.time_system,
+            memory_usage_byte: timer_result.memory_usage_byte,
+            poop_metrics: timer_result.poop_metrics,
+        },
+        status,
+    ))
 }
 
 pub struct RawExecutor<'a> {
@@ -137,24 +157,19 @@ impl Executor for RawExecutor<'_> {
         command_failure_action: Option<CmdFailureAction>,
         output_policy: &CommandOutputPolicy,
     ) -> Result<(TimingResult, ExitStatus)> {
-        let result = run_command_and_measure_common(
+        run_command_and_measure_common(
             command.get_command()?,
             iteration,
-            command_failure_action.unwrap_or_else(|| self.options.command_failure_action.clone()),
-            &self.options.command_input_policy,
-            output_policy,
-            &command.get_command_line(),
-        )?;
-
-        Ok((
-            TimingResult {
-                time_real: result.time_real,
-                time_user: result.time_user,
-                time_system: result.time_system,
-                memory_usage_byte: result.memory_usage_byte,
+            CommandExecutionOptions {
+                command_failure_action: command_failure_action
+                    .unwrap_or_else(|| self.options.command_failure_action.clone()),
+                command_input_policy: &self.options.command_input_policy,
+                command_output_policy: output_policy,
+                command_name: &command.get_command_line(),
+                collect_metrics: false,
+                metrics_to_collect: &[],
             },
-            result.status,
-        ))
+        )
     }
 
     fn calibrate(&mut self) -> Result<()> {
@@ -202,31 +217,29 @@ impl Executor for ShellExecutor<'_> {
             command_builder.arg(command.get_command_line());
         }
 
-        let mut result = run_command_and_measure_common(
+        let (mut timing_result, status) = run_command_and_measure_common(
             command_builder,
             iteration,
-            command_failure_action.unwrap_or_else(|| self.options.command_failure_action.clone()),
-            &self.options.command_input_policy,
-            output_policy,
-            &command.get_command_line(),
+            CommandExecutionOptions {
+                command_failure_action: command_failure_action
+                    .unwrap_or_else(|| self.options.command_failure_action.clone()),
+                command_input_policy: &self.options.command_input_policy,
+                command_output_policy: output_policy,
+                command_name: &command.get_command_line(),
+                collect_metrics: self.options.poop_metrics_enabled,
+                metrics_to_collect: &self.options.metrics_to_collect,
+            },
         )?;
 
         // Subtract shell spawning time
         if let Some(spawning_time) = self.shell_spawning_time {
-            result.time_real = (result.time_real - spawning_time.time_real).max(0.0);
-            result.time_user = (result.time_user - spawning_time.time_user).max(0.0);
-            result.time_system = (result.time_system - spawning_time.time_system).max(0.0);
+            timing_result.time_real = (timing_result.time_real - spawning_time.time_real).max(0.0);
+            timing_result.time_user = (timing_result.time_user - spawning_time.time_user).max(0.0);
+            timing_result.time_system =
+                (timing_result.time_system - spawning_time.time_system).max(0.0);
         }
 
-        Ok((
-            TimingResult {
-                time_real: result.time_real,
-                time_user: result.time_user,
-                time_system: result.time_system,
-                memory_usage_byte: result.memory_usage_byte,
-            },
-            result.status,
-        ))
+        Ok((timing_result, status))
     }
 
     /// Measure the average shell spawning time
@@ -289,6 +302,7 @@ impl Executor for ShellExecutor<'_> {
             time_user: mean(&times_user),
             time_system: mean(&times_system),
             memory_usage_byte: 0,
+            poop_metrics: None,
         });
 
         Ok(())
@@ -345,6 +359,7 @@ impl Executor for MockExecutor {
                 time_user: 0.0,
                 time_system: 0.0,
                 memory_usage_byte: 0,
+                poop_metrics: None,
             },
             status,
         ))

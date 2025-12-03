@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
+use crate::poop_metrics::PoopMetrics;
 use crate::util::units::Second;
 
 /// Set of values that will be exported.
@@ -52,4 +53,12 @@ pub struct BenchmarkResult {
     /// Parameter values for this benchmark
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub parameters: BTreeMap<String, String>,
+
+    /// Mean poop metrics (if enabled)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub poop_metrics: Option<PoopMetrics>,
+
+    /// All poop metrics measurements
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub poop_metrics_all: Option<Vec<PoopMetrics>>,
 }

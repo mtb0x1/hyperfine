@@ -16,6 +16,7 @@ use std::os::fd::AsFd;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Threading::CREATE_SUSPENDED;
 
+use crate::poop_metrics::{create_collector, MetricType, PoopMetrics};
 use crate::util::units::Second;
 use wall_clock_timer::WallClockTimer;
 
@@ -38,7 +39,7 @@ struct CPUTimes {
 }
 
 /// Used to indicate the result of running a command
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct TimerResult {
     pub time_real: Second,
     pub time_user: Second,
@@ -46,6 +47,8 @@ pub struct TimerResult {
     pub memory_usage_byte: u64,
     /// The exit status of the process
     pub status: ExitStatus,
+    /// poop performance metrics (if collected)
+    pub poop_metrics: Option<PoopMetrics>,
 }
 
 /// Discard the output of a child process.
@@ -80,7 +83,11 @@ fn discard(output: ChildStdout) {
 }
 
 /// Execute the given command and return a timing summary
-pub fn execute_and_measure(mut command: Command) -> Result<TimerResult> {
+pub fn execute_and_measure(
+    mut command: Command,
+    collect_metrics: bool,
+    metrics_to_collect: &[MetricType],
+) -> Result<TimerResult> {
     #[cfg(not(windows))]
     let cpu_timer = self::unix_timer::CPUTimer::start();
 
@@ -94,6 +101,24 @@ pub fn execute_and_measure(mut command: Command) -> Result<TimerResult> {
 
     let wallclock_timer = WallClockTimer::start();
     let mut child = command.spawn()?;
+
+    // Initialize poop metrics collector if requested
+    #[cfg(target_os = "linux")]
+    let metrics_collector = if collect_metrics {
+        let pid = child.id() as i32;
+        match create_collector(pid, metrics_to_collect) {
+            Ok(collector) => {
+                let _ = collector.enable();
+                Some(collector)
+            }
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
+    #[cfg(not(target_os = "linux"))]
+    let metrics_collector: Option<()> = None;
 
     #[cfg(windows)]
     let cpu_timer = {
@@ -111,11 +136,24 @@ pub fn execute_and_measure(mut command: Command) -> Result<TimerResult> {
     let time_real = wallclock_timer.stop();
     let (time_user, time_system, memory_usage_byte) = cpu_timer.stop();
 
+    // Read poop metrics if we created a collector
+    #[cfg(target_os = "linux")]
+    let poop_metrics = if let Some(collector) = metrics_collector {
+        let _ = collector.disable();
+        collector.read().ok()
+    } else {
+        None
+    };
+
+    #[cfg(not(target_os = "linux"))]
+    let poop_metrics = None;
+
     Ok(TimerResult {
         time_real,
         time_user,
         time_system,
         memory_usage_byte,
         status,
+        poop_metrics,
     })
 }

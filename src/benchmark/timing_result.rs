@@ -1,3 +1,4 @@
+use crate::poop_metrics::PoopMetrics;
 use crate::util::units::Second;
 
 /// Results from timing a single command
@@ -14,4 +15,7 @@ pub struct TimingResult {
 
     /// Maximum amount of memory used, in bytes
     pub memory_usage_byte: u64,
+
+    /// poop performance metrics (if enabled)
+    pub poop_metrics: Option<PoopMetrics>,
 }

@@ -85,6 +85,8 @@ fn test_csv() {
                 params.insert("bar".into(), "two".into());
                 params
             },
+            poop_metrics: None,
+            poop_metrics_all: None,
         },
         BenchmarkResult {
             command: String::from("command_b"),
@@ -105,6 +107,8 @@ fn test_csv() {
                 params.insert("bar".into(), "seven".into());
                 params
             },
+            poop_metrics: None,
+            poop_metrics_all: None,
         },
     ];
 

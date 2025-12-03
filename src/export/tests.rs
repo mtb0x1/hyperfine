@@ -38,6 +38,8 @@ fn test_markup_export_auto_ms() {
             memory_usage_byte: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
+            poop_metrics: None,
+            poop_metrics_all: None,
         },
         BenchmarkResult {
             command: String::from("sleep 2"),
@@ -53,6 +55,8 @@ fn test_markup_export_auto_ms() {
             memory_usage_byte: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
+            poop_metrics: None,
+            poop_metrics_all: None,
         },
     ];
 
@@ -113,6 +117,8 @@ fn test_markup_export_auto_s() {
             memory_usage_byte: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
+            poop_metrics: None,
+            poop_metrics_all: None,
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -128,6 +134,8 @@ fn test_markup_export_auto_s() {
             memory_usage_byte: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
+            poop_metrics: None,
+            poop_metrics_all: None,
         },
     ];
 
@@ -188,6 +196,8 @@ fn test_markup_export_manual_ms() {
             memory_usage_byte: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
+            poop_metrics: None,
+            poop_metrics_all: None,
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -203,6 +213,8 @@ fn test_markup_export_manual_ms() {
             memory_usage_byte: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
+            poop_metrics: None,
+            poop_metrics_all: None,
         },
     ];
 
@@ -262,6 +274,8 @@ fn test_markup_export_manual_s() {
             memory_usage_byte: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
+            poop_metrics: None,
+            poop_metrics_all: None,
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -277,6 +291,8 @@ fn test_markup_export_manual_s() {
             memory_usage_byte: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
+            poop_metrics: None,
+            poop_metrics_all: None,
         },
     ];
 

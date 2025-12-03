@@ -16,6 +16,7 @@ use crate::output::format::{format_duration, format_duration_unit};
 use crate::output::progress_bar::get_progress_bar;
 use crate::output::warnings::{OutlierWarningOptions, Warnings};
 use crate::parameter::ParameterNameAndValue;
+use crate::poop_metrics::PoopMetrics;
 use crate::util::exit_code::extract_exit_code;
 use crate::util::min_max::{max, min};
 use crate::util::units::Second;
@@ -27,6 +28,94 @@ use colored::*;
 use statistical::{mean, median, standard_deviation};
 
 use self::executor::Executor;
+
+/// Aggregate poop metrics from multiple timing results
+fn aggregate_poop_metrics(timing_results: &[TimingResult]) -> Option<PoopMetrics> {
+    let metrics_with_data: Vec<&PoopMetrics> = timing_results
+        .iter()
+        .filter_map(|tr| tr.poop_metrics.as_ref())
+        .collect();
+
+    if metrics_with_data.is_empty() {
+        return None;
+    }
+
+    let mut aggregated = PoopMetrics::new();
+
+    // Count how many results have each metric
+    let cpu_cycles_count = metrics_with_data
+        .iter()
+        .filter(|m| m.cpu_cycles.is_some())
+        .count();
+    let instructions_count = metrics_with_data
+        .iter()
+        .filter(|m| m.instructions.is_some())
+        .count();
+    let cache_refs_count = metrics_with_data
+        .iter()
+        .filter(|m| m.cache_references.is_some())
+        .count();
+    let cache_misses_count = metrics_with_data
+        .iter()
+        .filter(|m| m.cache_misses.is_some())
+        .count();
+    let branches_count = metrics_with_data
+        .iter()
+        .filter(|m| m.branches.is_some())
+        .count();
+    let branch_misses_count = metrics_with_data
+        .iter()
+        .filter(|m| m.branch_misses.is_some())
+        .count();
+    let page_faults_count = metrics_with_data
+        .iter()
+        .filter(|m| m.page_faults.is_some())
+        .count();
+
+    // Aggregate each metric
+    if cpu_cycles_count > 0 {
+        let sum: u64 = metrics_with_data.iter().filter_map(|m| m.cpu_cycles).sum();
+        aggregated.cpu_cycles = Some(sum / cpu_cycles_count as u64);
+    }
+    if instructions_count > 0 {
+        let sum: u64 = metrics_with_data
+            .iter()
+            .filter_map(|m| m.instructions)
+            .sum();
+        aggregated.instructions = Some(sum / instructions_count as u64);
+    }
+    if cache_refs_count > 0 {
+        let sum: u64 = metrics_with_data
+            .iter()
+            .filter_map(|m| m.cache_references)
+            .sum();
+        aggregated.cache_references = Some(sum / cache_refs_count as u64);
+    }
+    if cache_misses_count > 0 {
+        let sum: u64 = metrics_with_data
+            .iter()
+            .filter_map(|m| m.cache_misses)
+            .sum();
+        aggregated.cache_misses = Some(sum / cache_misses_count as u64);
+    }
+    if branches_count > 0 {
+        let sum: u64 = metrics_with_data.iter().filter_map(|m| m.branches).sum();
+        aggregated.branches = Some(sum / branches_count as u64);
+    }
+    if branch_misses_count > 0 {
+        let sum: u64 = metrics_with_data
+            .iter()
+            .filter_map(|m| m.branch_misses)
+            .sum();
+        aggregated.branch_misses = Some(sum / branch_misses_count as u64);
+    }
+    if page_faults_count > 0 {
+        let sum: u64 = metrics_with_data.iter().filter_map(|m| m.page_faults).sum();
+        aggregated.page_faults = Some(sum / page_faults_count as u64);
+    }
+
+    Some(aggregated)
+}
 
 /// Threshold for warning about fast execution time
 pub const MIN_EXECUTION_TIME: Second = 5e-3;
@@ -153,6 +242,7 @@ impl<'a> Benchmark<'a> {
         let mut times_system: Vec<Second> = vec![];
         let mut memory_usage_byte: Vec<u64> = vec![];
         let mut exit_codes: Vec<Option<i32>> = vec![];
+        let mut timing_results: Vec<TimingResult> = vec![];
         let mut all_succeeded = true;
 
         let output_policy = &self.options.command_output_policies[self.number];
@@ -282,6 +372,7 @@ impl<'a> Benchmark<'a> {
         times_system.push(res.time_system);
         memory_usage_byte.push(res.memory_usage_byte);
         exit_codes.push(extract_exit_code(status));
+        timing_results.push(res);
 
         all_succeeded = all_succeeded && success;
 
@@ -319,6 +410,7 @@ impl<'a> Benchmark<'a> {
             times_system.push(res.time_system);
             memory_usage_byte.push(res.memory_usage_byte);
             exit_codes.push(extract_exit_code(status));
+            timing_results.push(res);
 
             all_succeeded = all_succeeded && success;
 
@@ -347,6 +439,9 @@ impl<'a> Benchmark<'a> {
 
         let user_mean = mean(&times_user);
         let system_mean = mean(&times_system);
+
+        // Collect poop metrics for display
+        let aggregated_poop_metrics = aggregate_poop_metrics(&timing_results);
 
         // Formatting and console output
         let (mean_str, time_unit) = format_duration_unit(t_mean, self.options.time_unit);
@@ -379,6 +474,84 @@ impl<'a> Benchmark<'a> {
                     user_str.blue(),
                     system_str.blue()
                 );
+
+                // Display poop metrics if collected
+                if let Some(metrics) = aggregated_poop_metrics.as_ref() {
+                    println!();
+                    if let Some(cycles) = metrics.cpu_cycles {
+                        print!("  CPU cycles:              {}", cycles.to_string().cyan());
+                        if let Some(_instructions) = metrics.instructions {
+                            if let Some(ipc) = metrics.instructions_per_cycle() {
+                                println!("\t(IPC: {})", format!("{:.2}", ipc).cyan());
+                            } else {
+                                println!();
+                            }
+                        } else {
+                            println!();
+                        }
+                    }
+                    if let Some(instructions) = metrics.instructions {
+                        println!(
+                            "  Instructions:            {}",
+                            instructions.to_string().cyan()
+                        );
+                    }
+                    if let Some(cache_refs) = metrics.cache_references {
+                        print!(
+                            "  Cache references:        {}",
+                            cache_refs.to_string().cyan()
+                        );
+                        if let Some(_cache_misses) = metrics.cache_misses {
+                            if let Some(miss_rate) = metrics.cache_miss_rate() {
+                                println!(
+                                    "\t(miss rate: {}%)",
+                                    format!("{:.1}", miss_rate * 100.0).yellow()
+                                );
+                            } else {
+                                println!();
+                            }
+                        } else {
+                            println!();
+                        }
+                    }
+                    if let Some(cache_misses) = metrics.cache_misses {
+                        if metrics.cache_references.is_none() {
+                            println!(
+                                "  Cache misses:            {}",
+                                cache_misses.to_string().cyan()
+                            );
+                        }
+                    }
+                    if let Some(branches) = metrics.branches {
+                        print!("  Branch instructions:     {}", branches.to_string().cyan());
+                        if let Some(_branch_misses) = metrics.branch_misses {
+                            if let Some(miss_rate) = metrics.branch_miss_rate() {
+                                println!(
+                                    "\t(miss rate: {}%)",
+                                    format!("{:.1}", miss_rate * 100.0).yellow()
+                                );
+                            } else {
+                                println!();
+                            }
+                        } else {
+                            println!();
+                        }
+                    }
+                    if let Some(branch_misses) = metrics.branch_misses {
+                        if metrics.branches.is_none() {
+                            println!(
+                                "  Branch misses:           {}",
+                                branch_misses.to_string().cyan()
+                            );
+                        }
+                    }
+                    if let Some(page_faults) = metrics.page_faults {
+                        println!(
+                            "  Page faults:             {}",
+                            page_faults.to_string().cyan()
+                        );
+                    }
+                }
 
                 println!(
                     "  Range ({} … {}):   {:>8} … {:>8}    {}",
@@ -429,6 +602,15 @@ impl<'a> Benchmark<'a> {
             warnings.push(Warnings::OutliersDetected(outlier_warning_options));
         }
 
+        // Warn if poop metrics were requested but not collected
+        if self.options.poop_metrics_enabled
+            && aggregated_poop_metrics
+                .as_ref()
+                .is_none_or(|m| !m.has_data())
+        {
+            warnings.push(Warnings::PoopMetricsUnavailable);
+        }
+
         if !warnings.is_empty() {
             eprintln!(" ");
 
@@ -442,6 +624,18 @@ impl<'a> Benchmark<'a> {
         }
 
         self.run_cleanup_command(self.command.get_parameters().iter().cloned(), output_policy)?;
+
+        // Collect poop metrics
+        let poop_metrics_all: Vec<PoopMetrics> = timing_results
+            .iter()
+            .filter_map(|tr| tr.poop_metrics)
+            .collect();
+        let poop_metrics_all = if poop_metrics_all.is_empty() {
+            None
+        } else {
+            Some(poop_metrics_all)
+        };
+        let poop_metrics = aggregated_poop_metrics;
 
         Ok(BenchmarkResult {
             command: self.command.get_name(),
@@ -462,6 +656,8 @@ impl<'a> Benchmark<'a> {
                 .iter()
                 .map(|(name, value)| (name.to_string(), value.to_string()))
                 .collect(),
+            poop_metrics,
+            poop_metrics_all,
         })
     }
 }

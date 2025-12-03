@@ -136,6 +136,8 @@ fn create_result(name: &str, mean: Scalar) -> BenchmarkResult {
         memory_usage_byte: None,
         exit_codes: Vec::new(),
         parameters: BTreeMap::new(),
+        poop_metrics: None,
+        poop_metrics_all: None,
     }
 }
 

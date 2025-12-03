@@ -9,6 +9,7 @@ use clap::ArgMatches;
 
 use crate::command::Commands;
 use crate::error::OptionsError;
+use crate::poop_metrics::MetricType;
 use crate::util::units::{Second, Unit};
 
 use anyhow::Result;
@@ -246,6 +247,12 @@ pub struct Options {
 
     /// Which time unit to use when displaying results
     pub time_unit: Option<Unit>,
+
+    /// Whether to collect poop performance metrics
+    pub poop_metrics_enabled: bool,
+
+    /// Specific metrics to collect (empty means all)
+    pub metrics_to_collect: Vec<MetricType>,
 }
 
 impl Default for Options {
@@ -268,6 +275,8 @@ impl Default for Options {
             command_output_policies: vec![CommandOutputPolicy::Null],
             time_unit: None,
             command_input_policy: CommandInputPolicy::Null,
+            poop_metrics_enabled: false,
+            metrics_to_collect: vec![],
         }
     }
 }
@@ -463,6 +472,19 @@ impl Options {
         } else {
             CommandInputPolicy::Null
         };
+
+        // Parse poop metrics options
+        options.poop_metrics_enabled = matches.get_flag("metrics");
+
+        if let Some(metric_names) = matches.get_many::<String>("metric") {
+            options.metrics_to_collect = metric_names
+                .filter_map(|m| MetricType::from_str(m))
+                .collect();
+            // If specific metrics are requested, also enable metrics collection
+            if !options.metrics_to_collect.is_empty() {
+                options.poop_metrics_enabled = true;
+            }
+        }
 
         Ok(options)
     }

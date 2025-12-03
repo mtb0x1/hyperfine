@@ -15,6 +15,7 @@ pub enum Warnings {
     NonZeroExitCode,
     SlowInitialRun(Second, OutlierWarningOptions),
     OutliersDetected(OutlierWarningOptions),
+    PoopMetricsUnavailable,
 }
 
 impl fmt::Display for Warnings {
@@ -63,6 +64,13 @@ impl fmt::Display for Warnings {
                 } else {
                     " It might help to use the '--warmup' or '--prepare' options."
                 }
+            ),
+            Warnings::PoopMetricsUnavailable => write!(
+                f,
+                "Hardware performance metrics were requested but could not be collected. \
+                 This is likely due to insufficient permissions. On Linux, you may need to adjust \
+                 /proc/sys/kernel/perf_event_paranoid or run as root. See the hyperfine documentation \
+                 for more details."
             ),
         }
     }

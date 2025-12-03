@@ -400,6 +400,28 @@ fn build_command() -> Command {
                    `--runs` option.")
         )
         .arg(
+            Arg::new("metrics")
+            .long("metrics")
+            .action(ArgAction::SetTrue)
+            .help("Enable collection of poop [https://github.com/andrewrk/poop] like performance metrics (Linux only). \
+                   This will collect CPU cycles, instructions, cache references/misses, \
+                   branches/branch-misses, and page faults using Linux perf_event_open. \
+                   Note: May require adjusted permissions (see /proc/sys/kernel/perf_event_paranoid).")
+        )
+        .arg(
+            Arg::new("metric")
+            .long("metric")
+            .action(ArgAction::Append)
+            .value_name("TYPE")
+            .value_parser(["cpu-cycles", "instructions", "cache-references", "cache-misses", 
+                          "branches", "branch-misses", "page-faults"])
+            .help("Enable collection of specific poop [https://github.com/andrewrk/poop] like performance metric(s). \
+                   This option can be specified multiple times to collect multiple metrics. \
+                   Available metrics: cpu-cycles, instructions, cache-references, cache-misses, \
+                   branches, branch-misses, page-faults. \
+                   If not specified but --metrics is used, all metrics will be collected.")
+        )
+        .arg(
             Arg::new("debug-mode")
             .long("debug-mode")
             .action(ArgAction::SetTrue)
